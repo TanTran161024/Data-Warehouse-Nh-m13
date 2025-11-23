@@ -1,169 +1,145 @@
 import mysql.connector
 import os
 from mysql.connector import Error
+import logging
 
-# ==================== CẤU HÌNH KẾT NỐI ====================
+# ===========================
+# Cấu hình logger
+# ===========================
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+from datetime import datetime
+today_str_log = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+LOG_FILE = os.path.join(LOG_DIR, f"load_to_dw_{today_str_log}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger("LoadDWLogger")
+
+# ===========================
+# Cấu hình MySQL + file SQL
+# ===========================
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
     "password": "",         
     "charset": "utf8mb4",
     "collation": "utf8mb4_unicode_ci",
-    "autocommit": False      # để cho phép rollback khi có lỗi
+    "autocommit": False
 }
 
-# Các file SQL cần chạy
-SQL_DW_SCHEMA = "dataWarehouse/db_dw_setup.sql"      # Tạo DB + bảng dim/fact
-SQL_PROCEDURE = "dataWarehouse/sp_load_dw.sql"       # Stored Procedure chính
+SQL_DW_SCHEMA = "dataWarehouse/db_dw_setup.sql"
+SQL_PROCEDURE = "dataWarehouse/sp_load_dw.sql"
 
-# ====================================================================
-# HÀM ĐỌC VÀ THỰC THI 1 FILE SQL (dùng cho schema & stored procedure)
-# ====================================================================
+# ===========================
+# Hàm đọc và chạy SQL file
+# ===========================
 def execute_sql_file(cursor, filepath, desc=""):
-    """
-    Đọc toàn bộ nội dung file SQL và xử lý để chạy từng câu lệnh một.
-    Hỗ trợ DELIMITER khi file SQL chứa Stored Procedure.
-
-    cursor : cursor MySQL đang kết nối
-    filepath : đường dẫn file SQL
-    desc : mô tả để in log
-    """
     if not os.path.exists(filepath):
-        print(f"Không tìm thấy file: {filepath}")
+        logger.error("Không tìm thấy file: %s", filepath)
         return False
 
-    print(f"Đang thực thi {desc}: {filepath} ...")
+    logger.info("Đang thực thi %s: %s ...", desc, filepath)
     with open(filepath, "r", encoding="utf-8") as f:
         sql = f.read()
 
-    # Tách câu lệnh SQL nếu file có chứa DELIMITER (dùng trong stored procedure)
     statements = []
     current = ""
-    delimiter = ";"  # delimiter mặc định
+    delimiter = ";"
 
-    # Duyệt từng dòng để gom thành các câu SQL hoàn chỉnh
     for line in sql.splitlines():
         line = line.strip()
-
-        # Nếu gặp dòng đổi delimiter: DELIMITER $$
         if line.upper().startswith("DELIMITER"):
-            # Lưu lại câu SQL đang chưa đóng nếu có
             if current:
                 statements.append((delimiter, current))
                 current = ""
-
-            delimiter = line.split()[-1]  # lấy $$ hoặc //
+            delimiter = line.split()[-1]
         else:
-            # Tiếp tục gom câu SQL
             current += line + "\n"
-
-            # Nếu kết thúc bằng delimiter hiện tại → hoàn thành câu SQL
             if line.endswith(delimiter):
                 statements.append((delimiter, current.strip()))
                 current = ""
 
-    # Trường hợp còn dư câu SQL cuối cùng
     if current.strip():
         statements.append((delimiter, current.strip()))
 
-    # Thực thi các câu SQL đã gom
     for delim, stmt in statements:
-
-        # Một số câu có nhiều phần tách ra theo delimiter
         for part in [s.strip() for s in stmt.split(delim) if s.strip()]:
-
-            # Nếu vô tình chứa DELIMITER nữa thì bỏ qua
             if part.upper().startswith("DELIMITER"):
                 continue
-
             try:
-                cursor.execute(part)  # chạy câu SQL
+                cursor.execute(part)
             except Error as e:
-                # Bỏ qua lỗi table exists
                 if "already exists" not in str(e).lower():
-                    print(f"Lỗi SQL trong {filepath}: {e}")
-                    print(f"   Câu lệnh lỗi: {part[:200]}...")
-                    raise  # bắn lỗi ra ngoài để rollback
+                    logger.error("Lỗi SQL trong %s: %s", filepath, e)
+                    logger.error("   Câu lệnh lỗi: %s...", part[:200])
+                    raise
     return True
 
-
-# ====================================================================
-# HÀM MAIN: CHẠY TOÀN BỘ QUY TRÌNH LOAD DATA WAREHOUSE
-# ====================================================================
+# ===========================
+# Hàm main
+# ===========================
 def main():
-    print("BẮT ĐẦU LOAD DATA WAREHOUSE (Staging → DW)\n")
+    logger.info("BẮT ĐẦU LOAD DATA WAREHOUSE (Staging → DW)\n")
 
     try:
-        # -------------------------------------------------------------
-        # 1. KẾT NỐI MYSQL
-        # -------------------------------------------------------------
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
-        print("Kết nối MySQL thành công!")
+        logger.info("Kết nối MySQL thành công!")
 
-        # -------------------------------------------------------------
-        # 2. CHẠY FILE TẠO DB + BẢNG DIM/FACT (Star Schema)
-        # -------------------------------------------------------------
+        # 1. Chạy file schema
         execute_sql_file(cursor, SQL_DW_SCHEMA, "Tạo Data Warehouse schema")
         conn.commit()
-        print("Data Warehouse schema đã sẵn sàng.\n")
+        logger.info("Data Warehouse schema đã sẵn sàng.\n")
 
-        # -------------------------------------------------------------
-        # 3. TẠO OR UPDATE STORED PROCEDURE sp_load_dw
-        # -------------------------------------------------------------
+        # 2. Tạo/Update stored procedure
         execute_sql_file(cursor, SQL_PROCEDURE, "Tạo Stored Procedure sp_load_dw")
         conn.commit()
-        print("Stored Procedure sp_load_dw đã sẵn sàng.\n")
+        logger.info("Stored Procedure sp_load_dw đã sẵn sàng.\n")
 
-        # -------------------------------------------------------------
-        # 4. CHẠY PROCEDURE ĐỂ LOAD DỮ LIỆU (ETL thực sự)
-        # -------------------------------------------------------------
-        print("BẮT ĐẦU CHUYỂN ĐỔI DỮ LIỆU TỪ STAGING → DATA WAREHOUSE...")
-        print("   (Có thể mất vài phút nếu dữ liệu lớn)\n")
+        # 3. Chạy procedure ETL
+        logger.info("BẮT ĐẦU CHUYỂN ĐỔI DỮ LIỆU TỪ STAGING → DATA WAREHOUSE...")
+        logger.info("   (Có thể mất vài phút nếu dữ liệu lớn)\n")
 
         cursor.execute("USE bonbanh_datawarehouse")
-        cursor.callproc("sp_load_dw")  # chạy procedure ETL chính
-
+        cursor.callproc("sp_load_dw")
         conn.commit()
-        print("HOÀN TẤT! Toàn bộ dữ liệu đã được load vào Data Warehouse (Star Schema)")
+        logger.info("HOÀN TẤT! Toàn bộ dữ liệu đã được load vào Data Warehouse (Star Schema)")
 
-        # -------------------------------------------------------------
-        # 5. THỐNG KÊ SỐ DÒNG ĐÃ LOAD
-        # -------------------------------------------------------------
+        # 4. Thống kê số dòng
         cursor.execute("SELECT COUNT(*) FROM fact_danh_sach_xe")
         fact_count = cursor.fetchone()[0]
-        print(f"   → fact_danh_sach_xe: {fact_count:,} bản ghi")
+        logger.info("   → fact_danh_sach_xe: %s bản ghi", f"{fact_count:,}")
 
         cursor.execute("SELECT COUNT(*) FROM dim_mau_xe")
-        print(f"   → dim_mau_xe: {cursor.fetchone()[0]:,} bản ghi")
+        logger.info("   → dim_mau_xe: %s bản ghi", f"{cursor.fetchone()[0]:,}")
 
         cursor.execute("SELECT COUNT(*) FROM dim_vi_tri")
-        print(f"   → dim_vi_tri: {cursor.fetchone()[0]:,} bản ghi")
+        logger.info("   → dim_vi_tri: %s bản ghi", f"{cursor.fetchone()[0]:,}")
 
     except Error as e:
-        print(f"LỖI KẾT NỐI HOẶC THỰC THI: {e}")
-        # rollback nếu có lỗi trong quá trình chạy
+        logger.error("LỖI KẾT NỐI HOẶC THỰC THI: %s", e)
         if 'conn' in locals():
             conn.rollback()
 
     finally:
-        # -------------------------------------------------------------
-        # 6. ĐÓNG KẾT NỐI MYSQL
-        # -------------------------------------------------------------
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals() and conn.is_connected():
             conn.close()
+        logger.info("\nĐóng kết nối MySQL.")
 
-        print("\nĐóng kết nối MySQL.")
+    logger.info("\nQUY TRÌNH HOÀN TẤT! Bạn có thể query DW bằng câu lệnh:")
+    logger.info("   USE bonbanh_datawarehouse;")
+    logger.info("   SELECT * FROM fact_danh_sach_xe LIMIT 5;")
 
-    print("\nQUY TRÌNH HOÀN TẤT! Bạn có thể query DW bằng câu lệnh:")
-    print("   USE bonbanh_datawarehouse;")
-    print("   SELECT * FROM fact_danh_sach_xe LIMIT 5;")
-
-
-# ====================================================================
-# CHẠY CHƯƠNG TRÌNH
-# ====================================================================
+# ===========================
 if __name__ == "__main__":
     main()

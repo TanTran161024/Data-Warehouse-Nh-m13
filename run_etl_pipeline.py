@@ -1,47 +1,83 @@
-import subprocess
+import logging
+import os
 import sys
-import datetime
+import subprocess
+from datetime import datetime
 
-def run_step(title, command):
-    print("\n" + "="*70)
-    print(f"{title}")
-    print("="*70)
+# ===========================
+# Cấu hình logging
+# ===========================
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+today_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+LOG_FILE = os.path.join(LOG_DIR, f"etl_pipeline_{today_str}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger("ETL_Pipeline_Logger")
+
+# ===========================
+# Hàm chạy một file Python và log mọi thứ
+# ===========================
+def run_step(title, script_path):
+    logger.info("=" * 70)
+    logger.info("BẮT ĐẦU: %s", title)
+    logger.info("=" * 70)
+
+    if not os.path.exists(script_path):
+        logger.error("File không tồn tại: %s", script_path)
+        sys.exit(1)
 
     try:
         result = subprocess.run(
-            [sys.executable, command],
-            capture_output=False,
+            [sys.executable, script_path],
+            capture_output=True,
             text=True
         )
 
+        if result.stdout:
+            logger.info("STDOUT:\n%s", result.stdout.strip())
+        if result.stderr:
+            logger.error("STDERR:\n%s", result.stderr.strip())
+
         if result.returncode != 0:
-            print(f"LỖI: {title}")
+            logger.error("LỖI: %s (return code: %d)", title, result.returncode)
             sys.exit(result.returncode)
 
-        print(f"HOÀN TẤT: {title}")
+        logger.info("HOÀN TẤT: %s", title)
 
     except Exception as e:
-        print(f" LỖI KHÔNG XÁC ĐỊNH trong {title}: {e}")
+        logger.exception("LỖI KHÔNG XÁC ĐỊNH trong %s: %s", title, e)
         sys.exit(1)
 
-
+# ===========================
+# Hàm main
+# ===========================
 def main():
-    print("\n================ ETL PIPELINE BONBANH ==================\n")
-    print("Ngày chạy:", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    logger.info("\n================ ETL PIPELINE BONBANH ==================\n")
+    logger.info("Ngày chạy: %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    logger.info("File log: %s", LOG_FILE)
 
-    # 1. Crawl dữ liệu
-    run_step("1: Crawl dữ liệu (get_data.py)", "get_data.py")
+    # Danh sách các file Python của pipeline
+    etl_scripts = [
+        "get_data.py",
+        "load_to_staging.py",
+        "load_to_dw.py",
+        "load_to_mart.py"
+    ]
 
-    # 2. Load vào staging
-    run_step("2: Load vào STAGING (load_to_staging.py)", "load_to_staging.py")
+    for idx, script in enumerate(etl_scripts, 1):
+        run_step(f"{idx}: {script}", script)
 
-    # 3. Load vào Data Warehouse
-    run_step("3: Load vào DATA WAREHOUSE (load_to_dw.py)", "load_to_dw.py")
-    # 4. Load vào Data Mart
-    run_step("4: Load vào DATA MART (load_to_datamart.py)", "load_to_mart.py")
-    print("\n TOÀN BỘ QUÁ TRÌNH ETL ĐÃ HOÀN THÀNH KHÔNG LỖI! ")
-    
-
+    logger.info("\n TOÀN BỘ QUÁ TRÌNH ETL ĐÃ HOÀN THÀNH KHÔNG LỖI! ")
 
 if __name__ == "__main__":
     main()
