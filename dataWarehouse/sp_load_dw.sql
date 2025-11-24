@@ -4,7 +4,6 @@ DELIMITER $$
 CREATE PROCEDURE sp_load_dw()
 BEGIN
     DECLARE done INT DEFAULT FALSE;
-    DECLARE v_id BIGINT;
 
     -- staging columns
     DECLARE v_ten VARCHAR(512);
@@ -28,9 +27,26 @@ BEGIN
 
     DECLARE cur CURSOR FOR 
         SELECT 
-            ten_xe, loai_xe_nam_sx, nam_san_xuat, dong_co, mau_ngoai_that, mau_noi_that,
-            so_cho_ngoi, so_cua, noi_ban, lien_he, xuat_xu, tinh_trang, kieu_dang,
-            gia_xe_vnd, so_km, ngay_dang, luot_xem, link_xe
+            ten_xe,
+            loai_xe_nam_sx,
+            nam_san_xuat,
+            dong_co,
+            mau_ngoai_that,
+            mau_noi_that,
+
+            /* Làm sạch dữ liệu số */
+            NULLIF(CAST(REGEXP_REPLACE(so_cho_ngoi, '[^0-9]', '') AS UNSIGNED), 0) AS so_cho_ngoi,
+            NULLIF(CAST(REGEXP_REPLACE(so_cua, '[^0-9]', '') AS UNSIGNED), 0) AS so_cua,
+            noi_ban,
+            lien_he,
+            xuat_xu,
+            tinh_trang,
+            kieu_dang,
+            NULLIF(CAST(REGEXP_REPLACE(gia_xe_vnd, '[^0-9]', '') AS UNSIGNED), 0) AS gia_xe_vnd,
+            NULLIF(CAST(REGEXP_REPLACE(so_km, '[^0-9]', '') AS UNSIGNED), 0) AS so_km,
+            ngay_dang,
+            NULLIF(CAST(REGEXP_REPLACE(luot_xem, '[^0-9]', '') AS UNSIGNED), 0) AS luot_xem,
+            link_xe
         FROM bonbanh_staging.xe_bonbanh;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
@@ -46,9 +62,7 @@ BEGIN
             LEAVE read_loop; 
         END IF;
 
-        -- ========================================
-        -- 🔵 DIM MAU XE (SCD TYPE 1)
-        -- ========================================
+        /* DIM MAU XE */
         SET @bk_car = MD5(CONCAT(IFNULL(v_ten,''), '_', IFNULL(v_namsx,'')));
 
         INSERT INTO dim_mau_xe (
@@ -70,9 +84,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_car 
         FROM dim_mau_xe WHERE business_key=@bk_car;
 
-        -- ========================================
-        -- 🔵 DIM VỊ TRÍ
-        -- ========================================
+        /* DIM VỊ TRÍ */
         SET @bk_loc = MD5(IFNULL(v_noiban,''));
         INSERT INTO dim_vi_tri (business_key, noi_ban)
         VALUES (@bk_loc, v_noiban)
@@ -81,7 +93,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_loc 
         FROM dim_vi_tri WHERE business_key=@bk_loc;
 
-        -- DIM NGƯỜI BÁN
+        /* DIM NGƯỜI BÁN */
         SET @bk_seller = MD5(IFNULL(v_lienhe,''));
         INSERT INTO dim_nguoi_ban (business_key, lien_he)
         VALUES (@bk_seller, v_lienhe)
@@ -90,7 +102,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_seller 
         FROM dim_nguoi_ban WHERE business_key=@bk_seller;
 
-        -- DIM XUẤT XỨ
+        /* DIM XUẤT XỨ */
         SET @bk_xx = MD5(IFNULL(v_xuatxu,''));
         INSERT INTO dim_xuat_xu (business_key, xuat_xu)
         VALUES (@bk_xx, v_xuatxu)
@@ -99,7 +111,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_xx 
         FROM dim_xuat_xu WHERE business_key=@bk_xx;
 
-        -- DIM TÌNH TRẠNG
+        /* DIM TÌNH TRẠNG */
         SET @bk_cond = MD5(IFNULL(v_tinhtrang,''));
         INSERT INTO dim_tinh_trang (business_key, tinh_trang)
         VALUES (@bk_cond, v_tinhtrang)
@@ -108,7 +120,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_cond 
         FROM dim_tinh_trang WHERE business_key=@bk_cond;
 
-        -- DIM KIỂU DÁNG
+        /* DIM KIỂU DÁNG */
         SET @bk_style = MD5(IFNULL(v_kieudang,''));
         INSERT INTO dim_kieu_dang (business_key, kieu_dang)
         VALUES (@bk_style, v_kieudang)
@@ -117,9 +129,7 @@ BEGIN
         SELECT surrogate_key INTO @sk_style 
         FROM dim_kieu_dang WHERE business_key=@bk_style;
 
-        -- ========================================
-        -- 🟠 INSERT FACT
-        -- ========================================
+        /* FACT TABLE */
         INSERT INTO fact_danh_sach_xe (
             mau_xe_sk, vi_tri_sk, nguoi_ban_sk, xuat_xu_sk, tinh_trang_sk, kieu_dang_sk,
             gia_xe, so_km, ngay_dang, luot_xem, link_xe

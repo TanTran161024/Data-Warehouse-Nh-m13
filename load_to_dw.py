@@ -2,15 +2,14 @@ import mysql.connector
 import os
 from mysql.connector import Error
 import logging
+import config  # Import config file
+
+from datetime import datetime
 
 # ===========================
 # Cấu hình logger
 # ===========================
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-from datetime import datetime
-today_str_log = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-LOG_FILE = os.path.join(LOG_DIR, f"load_to_dw_{today_str_log}.log")
+LOG_FILE = config.get_log_file("load_to_dw")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,17 +25,10 @@ logger = logging.getLogger("LoadDWLogger")
 # ===========================
 # Cấu hình MySQL + file SQL
 # ===========================
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",         
-    "charset": "utf8mb4",
-    "collation": "utf8mb4_unicode_ci",
-    "autocommit": False
-}
+DB_CONFIG = config.DB_CONFIG_BASE
 
-SQL_DW_SCHEMA = "dataWarehouse/db_dw_setup.sql"
-SQL_PROCEDURE = "dataWarehouse/sp_load_dw.sql"
+SQL_DW_SCHEMA = config.DW_SQL_SCHEMA_FILE
+SQL_PROCEDURE = config.DW_SQL_PROCEDURE_FILE
 
 # ===========================
 # Hàm đọc và chạy SQL file

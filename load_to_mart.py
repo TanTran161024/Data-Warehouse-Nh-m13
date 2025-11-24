@@ -3,14 +3,12 @@ import os
 from mysql.connector import Error
 from datetime import date
 import logging
+import config  # Import config file
 
 # ===========================
 # Cấu hình logger
 # ===========================
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-today_str_log = date.today().strftime("%Y-%m-%d")
-LOG_FILE = os.path.join(LOG_DIR, f"load_datamart_{today_str_log}.log")
+LOG_FILE = config.get_log_file("load_datamart")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,16 +24,9 @@ logger = logging.getLogger("LoadDataMartLogger")
 # ================================================================
 #              CẤU HÌNH KẾT NỐI MYSQL
 # ================================================================
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",  
-    "charset": "utf8mb4",
-    "collation": "utf8mb4_unicode_ci",
-    "autocommit": False
-}
+DB_CONFIG = config.DB_CONFIG_BASE
 
-SQL_DATAMART_SCHEMA = "dataMart/db_datamart_setup.sql"
+SQL_DATAMART_SCHEMA = config.DATAMART_SQL_SCHEMA_FILE
 
 # ================================================================
 #              HÀM THỰC THI FILE SQL ĐƠN GIẢN (không DELIMITER)

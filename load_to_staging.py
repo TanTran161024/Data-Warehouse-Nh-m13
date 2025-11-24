@@ -5,14 +5,13 @@ import os
 from mysql.connector import Error
 from datetime import datetime
 import logging
+import config  # Import config file
 
 # ===========================
 # Cấu hình logger
 # ===========================
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
 today_str_log = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-LOG_FILE = os.path.join(LOG_DIR, f"load_to_staging_{today_str_log}.log")
+LOG_FILE = config.get_log_file("load_to_staging")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,16 +27,8 @@ logger = logging.getLogger("LoadStagingLogger")
 # ===========================
 # Cấu hình DB + file CSV
 # ===========================
-DB_CONFIG_NO_DB = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",         
-    "charset": "utf8mb4",
-    "collation": "utf8mb4_unicode_ci",
-    "autocommit": True
-}
-
-DB_CONFIG = {**DB_CONFIG_NO_DB, "database": "bonbanh_staging"}
+DB_CONFIG_NO_DB = config.DB_CONFIG_NO_DB
+DB_CONFIG = config.DB_CONFIG_STAGING
 
 today_str = datetime.now().strftime("%Y-%m-%d")
 CSV_FILE = f"data/bonbanh_raw_{today_str}.csv"
@@ -47,8 +38,8 @@ if not os.path.exists(CSV_FILE):
     logger.info("Chạy: python get_data.py trước!")
     exit()
 
-SQL_SCHEMA_FILE = "staging/bonbanh_staging.sql"
-SQL_SP_FILE = "staging/transform.sql"
+SQL_SCHEMA_FILE = config.STAGING_SQL_SCHEMA_FILE
+SQL_SP_FILE = config.STAGING_SQL_SP_FILE
 
 # ===========================
 # Hàm tiện ích
