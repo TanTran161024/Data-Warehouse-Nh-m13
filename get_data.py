@@ -8,7 +8,10 @@ from datetime import datetime
 import logging
 
 # ===========================
-# Cấu hình logger
+# 1. Khởi tạo môi trường:
+# - Tạo thư mục logs/
+# - Tạo file log theo thời gian
+# - Cấu hình logging (file + console)
 # ===========================
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -27,7 +30,8 @@ logging.basicConfig(
 logger = logging.getLogger("GetDataLogger")
 
 # ===========================
-# Cấu hình crawl
+# 2. Kiểm tra và tạo CSV:
+# Nếu CSV chưa tồn tại → Tạo header → file + ghi NOUQUYEN (Không dùng crawl)
 # ===========================
 BASE_URL = "https://bonbanh.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -47,37 +51,8 @@ if not os.path.exists(CSV_FILE):
         ])
 
 # ===========================
-# Ghi CSV
-# ===========================
-def append_csv(row_dict):
-    try:
-        with open(CSV_FILE, "a", encoding="utf-8-sig", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                row_dict.get("Loại xe + Năm SX", ""),
-                row_dict.get("Tên xe", ""),
-                row_dict.get("Giá xe_raw", ""),
-                row_dict.get("Nơi bán", ""),
-                row_dict.get("Liên hệ", ""),
-                row_dict.get("Link xe", ""),
-                row_dict.get("Ngày đăng", ""),
-                row_dict.get("Lượt xem", ""),
-                row_dict.get("Số Km đã đi:", ""),
-                row_dict.get("Tình trạng:", ""),
-                row_dict.get("Xuất xứ:", ""),
-                row_dict.get("Kiểu dáng:", ""),
-                row_dict.get("Động cơ:", ""),
-                row_dict.get("Màu ngoại thất:", ""),
-                row_dict.get("Màu nội thất:", ""),
-                row_dict.get("Số chỗ ngồi:", ""),
-                row_dict.get("Số cửa:", ""),
-                row_dict.get("Năm sản xuất:", "")
-            ])
-    except Exception as e:
-        logger.exception("Lỗi khi ghi CSV: %s", e)
-
-# ===========================
-# Lấy HTML từ URL
+# 4. Tải trang danh sách:
+# Goi get_page(url), requests.get(url, headers, timeout=15), Trả về HTML của trang danh sách
 # ===========================
 def get_page(url):
     try:
@@ -89,12 +64,12 @@ def get_page(url):
         return ""
 
 # ===========================
-# Parse trang danh sách
+# 5. Parse danh sách xe:
+# Dùng BeautifulSoup parse soup, Mỗi xe -1 dict, list[dict]
 # ===========================
 def parse_list_page(html):
     soup = BeautifulSoup(html, "html.parser")
     cars = []
-
     for item in soup.select(".car-item"):
         try:
             a_tag = item.select_one("a")
@@ -131,7 +106,12 @@ def parse_list_page(html):
     return cars
 
 # ===========================
-# Parse trang chi tiết
+# 6. Duyệt từng xe trong danh sách: Sách CAR_LIST
+# 7. Lấy trang chi tiết xe, parse detail_page
+# - GET HTML chi tiết
+# - Regex: Ngay dang, Luot xem
+# - Lấy thông tin tu mail_parent row
+# - Trả về dict
 # ===========================
 def parse_detail_page(url):
     try:
@@ -169,11 +149,42 @@ def parse_detail_page(url):
         return {}
 
 # ===========================
+# 9. GHI CSV (append ngay) append.csv(car)
+# ===========================
+def append_csv(row_dict):
+    try:
+        with open(CSV_FILE, "a", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                row_dict.get("Loại xe + Năm SX", ""),
+                row_dict.get("Tên xe", ""),
+                row_dict.get("Giá xe_raw", ""),
+                row_dict.get("Nơi bán", ""),
+                row_dict.get("Liên hệ", ""),
+                row_dict.get("Link xe", ""),
+                row_dict.get("Ngày đăng", ""),
+                row_dict.get("Lượt xem", ""),
+                row_dict.get("Số Km đã đi:", ""),
+                row_dict.get("Tình trạng:", ""),
+                row_dict.get("Xuất xứ:", ""),
+                row_dict.get("Kiểu dáng:", ""),
+                row_dict.get("Động cơ:", ""),
+                row_dict.get("Màu ngoại thất:", ""),
+                row_dict.get("Màu nội thất:", ""),
+                row_dict.get("Số chỗ ngồi:", ""),
+                row_dict.get("Số cửa:", ""),
+                row_dict.get("Năm sản xuất:", "")
+            ])
+    except Exception as e:
+        logger.exception("Lỗi khi ghi CSV: %s", e)
+
+# ===========================
 # Hàm main
 # ===========================
 def main():
     all_count = 0
 
+    # 3. Tạo URL cho trang
     for page in range(1, 2):
         url = f"{BASE_URL}/oto/page,{page}/" if page > 1 else BASE_URL
         logger.info("Đang tải trang danh sách %d... %s", page, url)
@@ -187,11 +198,14 @@ def main():
             if link:
                 logger.info("→ Lấy chi tiết: %s", link)
                 detail_data = parse_detail_page(link)
+                # 8. Ghép Detail va List - UPDATE DICT XE card.update(detail_data)
                 car.update(detail_data)
                 append_csv(car)
                 all_count += 1
+                # 10. Time sleep(1) Tránh bi block all_count +=1
                 time.sleep(1)
 
+    # 11. Hoàn tất trang crawl: Log tổng số bản ghi đã crawl
     logger.info("🎉 Đã crawl + ghi CSV %d bản ghi.", all_count)
 
 # ===========================
